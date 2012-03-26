@@ -29,7 +29,6 @@ VALUE rb_cRuggedIndex;
 
 static void rb_git_indexentry_toC(git_index_entry *entry, VALUE rb_entry);
 static VALUE rb_git_indexentry_fromC(const git_index_entry *entry);
-static VALUE rb_git_reuc_fromC(const git_index_reuc_entry *entry);
 
 /*
  * Index
@@ -112,8 +111,6 @@ static VALUE rb_git_index_get(int argc, VALUE *argv, VALUE self)
 {
 	git_index *index;
 	const git_index_entry *entry = NULL;
-
-	int error;
 
 	VALUE rb_entry, rb_stage;
 
@@ -330,6 +327,7 @@ static VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 {
 	int error;
 	git_indexer *indexer;
+	git_transfer_progress stats;
 	VALUE rb_oid;
 
 	Check_Type(rb_packfile_path, T_STRING);
@@ -337,7 +335,7 @@ static VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
 	rugged_exception_check(error);
 
-	error = git_indexer_run(indexer, NULL);
+	error = git_indexer_run(indexer, &stats);
 	rugged_exception_check(error);
 
 	error = git_indexer_write(indexer);
@@ -347,6 +345,62 @@ static VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 
 	git_indexer_free(indexer);
 	return rb_oid;
+}
+
+/*
+ * A bit janky, but it works. So long as you don't nest calls to *
+ * iterate_packfile anyway.
+ */
+static VALUE iteration_function = Qnil;
+static int iteration_arity = 0;
+static git_transfer_progress stats;
+
+static int iterator(git_oid *id, void *data, size_t len, git_otype type)
+{
+	VALUE rb_data;
+	VALUE rb_otype = rugged_otype_new(type);
+	VALUE rb_oid = rugged_create_oid(id);
+	VALUE rb_processed = INT2FIX(stats.indexed_objects);
+	VALUE rb_total = INT2FIX(stats.total_objects);
+
+	if (iteration_arity == 4) {
+		rb_funcall(iteration_function, rb_intern("call"), 4, rb_processed, rb_total, rb_otype, rb_oid);
+	} else if (iteration_arity == 5) {
+		/* Don't allocate data strings unless requested */
+		rb_data = rugged_str_new(data, len, NULL);
+		rb_funcall(iteration_function, rb_intern("call"), 5, rb_processed, rb_total, rb_otype, rb_oid, rb_data);
+	} else {
+		/* Shouldn't be possible */
+		rb_raise(rb_eRuntimeError, "Invalid iteration arity: %d", iteration_arity);
+	}
+	return 0;
+}
+
+VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
+{
+	int error;
+	git_indexer *indexer;
+	VALUE arity;
+
+	if(rb_block_given_p()) {
+		iteration_function = rb_block_proc();
+		arity = rb_funcall(iteration_function, rb_intern("arity"), 0);
+		iteration_arity = FIX2INT(arity);
+		if (iteration_arity != 4 && iteration_arity != 5)
+			rb_raise(rb_eArgError, "Must pass block accepting exactly 4 or 5 arguments");
+	} else {
+		rb_raise(rb_eArgError, "must supply a block");
+	}
+
+	Check_Type(rb_packfile_path, T_STRING);
+
+	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
+	rugged_exception_check(error);
+
+	error = git_indexer_iterate(indexer, &stats, &iterator);
+	rugged_exception_check(error);
+
+	return Qnil;
 }
 
 static VALUE rb_git_index_writetree(int argc, VALUE *argv, VALUE self)
@@ -422,6 +476,7 @@ void Init_rugged_index()
 	rb_define_method(rb_cRuggedIndex, "read_tree", rb_git_index_readtree, 1);
 
 	rb_define_singleton_method(rb_cRuggedIndex, "index_pack", rb_git_indexer, 1);
+	rb_define_singleton_method(rb_cRuggedIndex, "iterate_packfile", rb_git_iterate_packfile, 1);
 
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE"), INT2FIX(GIT_IDXENTRY_STAGEMASK));
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE_SHIFT"), INT2FIX(GIT_IDXENTRY_STAGESHIFT));
