@@ -398,7 +398,7 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 static VALUE iteration_function = Qnil;
 static int iteration_arity = 0;
 
-static void iterator(git_oid *id, void *data, size_t len, git_otype type)
+static int iterator(git_oid *id, void *data, size_t len, git_otype type)
 {
 	VALUE rb_data;
 	VALUE rb_otype = rugged_otype_new(type);
@@ -414,6 +414,7 @@ static void iterator(git_oid *id, void *data, size_t len, git_otype type)
 		/* Shouldn't be possible */
 		rb_raise(rb_eRuntimeError, "Invalid iteration arity: %d", iteration_arity);
 	}
+	return 0;
 }
 
 VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
@@ -438,11 +439,10 @@ VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
 	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
 	rugged_exception_check(error);
 
-	// error = git_indexer_run(indexer, &stats);
-	// rugged_exception_check(error);
-
-	error = git_indexer_iterate(indexer, &iterator);
+	error = git_indexer_iterate(indexer, &stats, &iterator);
 	rugged_exception_check(error);
+
+	git_indexer_free(indexer);
 
 	return Qnil;
 }
