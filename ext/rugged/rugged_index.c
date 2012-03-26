@@ -382,8 +382,6 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 	error = git_indexer_run(indexer, &stats);
 	rugged_exception_check(error);
 
-	printf("stats: %p, total: %u, processed: %u\n", &stats, stats.total, stats.processed);
-
 	error = git_indexer_write(indexer);
 	rugged_exception_check(error);
 
