@@ -371,6 +371,7 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 {
 	int error;
 	git_indexer *indexer;
+	git_indexer_stats stats;
 	VALUE rb_oid;
 
 	Check_Type(rb_packfile_path, T_STRING);
@@ -378,8 +379,10 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
 	rugged_exception_check(error);
 
-	error = git_indexer_run(indexer, NULL);
+	error = git_indexer_run(indexer, &stats);
 	rugged_exception_check(error);
+
+	printf("stats: %p, total: %u, processed: %u\n", &stats, stats.total, stats.processed);
 
 	error = git_indexer_write(indexer);
 	rugged_exception_check(error);
@@ -388,6 +391,41 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 
 	git_indexer_free(indexer);
 	return rb_oid;
+}
+
+/*
+ * A bit janky, but it works. So long as you don't nest calls to *
+ * iterate_packfile anyway.
+ */
+static VALUE iteration_function = Qnil;
+
+static void iterator(git_oid *id)
+{
+	VALUE rb_oid = rugged_create_oid(id);
+	rb_funcall(iteration_function, rb_intern("call"), 1, rb_oid);
+}
+
+VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
+{
+	int error;
+	git_indexer *indexer;
+	git_indexer_stats stats;
+	VALUE rb_oid;
+
+	if(rb_block_given_p())
+		iteration_function = rb_block_proc();
+	else
+		rb_raise(rb_eArgError, "must supply a block");
+
+	Check_Type(rb_packfile_path, T_STRING);
+
+	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
+	rugged_exception_check(error);
+
+	error = git_indexer_run(indexer, &stats);
+	rugged_exception_check(error);
+	git_indexer_iterate(indexer, &iterator);
+	return Qnil;
 }
 
 VALUE rb_git_index_writetree(VALUE self)
@@ -433,6 +471,7 @@ void Init_rugged_index()
 	rb_define_method(rb_cRuggedIndex, "write_tree", rb_git_index_writetree, 0);
 
 	rb_define_singleton_method(rb_cRuggedIndex, "index_pack", rb_git_indexer, 1);
+	rb_define_singleton_method(rb_cRuggedIndex, "iterate_packfile", rb_git_iterate_packfile, 1);
 
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE"), INT2FIX(GIT_IDXENTRY_STAGEMASK));
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE_SHIFT"), INT2FIX(GIT_IDXENTRY_STAGESHIFT));
