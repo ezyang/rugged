@@ -700,7 +700,6 @@ VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
 	git_indexer *indexer;
 	git_indexer_stats stats;
 	git_repository *repo;
-	VALUE rb_oid, arity;
 	VALUE rb_iter;
 
 	Check_Type(rb_packfile_path, T_STRING);
