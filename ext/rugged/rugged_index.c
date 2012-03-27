@@ -438,10 +438,7 @@ VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
 	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
 	rugged_exception_check(error);
 
-	// error = git_indexer_run(indexer, &stats);
-	// rugged_exception_check(error);
-
-	error = git_indexer_iterate(indexer, &iterator);
+	error = git_indexer_iterate(indexer, &stats, &iterator);
 	rugged_exception_check(error);
 
 	return Qnil;
