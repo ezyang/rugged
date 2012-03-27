@@ -391,6 +391,62 @@ VALUE rb_git_indexer(VALUE self, VALUE rb_packfile_path)
 	return rb_oid;
 }
 
+/*
+ * A bit janky, but it works. So long as you don't nest calls to *
+ * iterate_packfile anyway.
+ */
+static VALUE iteration_function = Qnil;
+static int iteration_arity = 0;
+
+static void iterator(git_oid *id, void *data, size_t len, git_otype type)
+{
+	VALUE rb_data;
+	VALUE rb_otype = rugged_otype_new(type);
+	VALUE rb_oid = rugged_create_oid(id);
+
+	if (iteration_arity == 2) {
+		rb_funcall(iteration_function, rb_intern("call"), 2, rb_otype, rb_oid);
+	} else if (iteration_arity == 3) {
+		/* Don't allocate data strings unless requested */
+		rb_data = rugged_str_new(data, len, NULL);
+		rb_funcall(iteration_function, rb_intern("call"), 3, rb_otype, rb_oid, rb_data);
+	} else {
+		/* Shouldn't be possible */
+		rb_raise(rb_eRuntimeError, "Invalid iteration arity: %d", iteration_arity);
+	}
+}
+
+VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
+{
+	int error;
+	git_indexer *indexer;
+	git_indexer_stats stats;
+	VALUE rb_oid, arity;
+
+	if(rb_block_given_p()) {
+		iteration_function = rb_block_proc();
+		arity = rb_funcall(iteration_function, rb_intern("arity"), 0);
+		iteration_arity = FIX2INT(arity);
+		if (iteration_arity != 2 && iteration_arity != 3)
+			rb_raise(rb_eArgError, "Must pass block accepting exactly 2 or 3 arguments");
+	} else {
+		rb_raise(rb_eArgError, "must supply a block");
+	}
+
+	Check_Type(rb_packfile_path, T_STRING);
+
+	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
+	rugged_exception_check(error);
+
+	// error = git_indexer_run(indexer, &stats);
+	// rugged_exception_check(error);
+
+	error = git_indexer_iterate(indexer, &iterator);
+	rugged_exception_check(error);
+
+	return Qnil;
+}
+
 VALUE rb_git_index_writetree(VALUE self)
 {
 	git_index *index;
@@ -434,6 +490,7 @@ void Init_rugged_index()
 	rb_define_method(rb_cRuggedIndex, "write_tree", rb_git_index_writetree, 0);
 
 	rb_define_singleton_method(rb_cRuggedIndex, "index_pack", rb_git_indexer, 1);
+	rb_define_singleton_method(rb_cRuggedIndex, "iterate_packfile", rb_git_iterate_packfile, 1);
 
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE"), INT2FIX(GIT_IDXENTRY_STAGEMASK));
 	rb_const_set(rb_cRuggedIndex, rb_intern("ENTRY_FLAGS_STAGE_SHIFT"), INT2FIX(GIT_IDXENTRY_STAGESHIFT));
