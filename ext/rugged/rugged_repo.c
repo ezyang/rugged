@@ -685,6 +685,43 @@ static VALUE rb_git_repo_status(int argc, VALUE *argv, VALUE self)
 	return Qnil;
 }
 
+static int iterator(git_repository *repo, void *data, git_object *object)
+{
+	/* TODO: make this safer? */
+	VALUE iteration_function = (VALUE) data;
+	VALUE rb_object = rugged_object_new(repo, object);
+	rb_funcall(iteration_function, rb_intern("call"), 1, rb_object);
+	return 0;
+}
+
+VALUE rb_git_iterate_packfile(VALUE self, VALUE rb_packfile_path)
+{
+	int error;
+	git_indexer *indexer;
+	git_indexer_stats stats;
+	git_repository *repo;
+	VALUE rb_oid, arity;
+	VALUE rb_iter;
+
+	Check_Type(rb_packfile_path, T_STRING);
+
+	if(!rb_block_given_p())
+		rb_raise(rb_eArgError, "must supply a block");
+
+	Data_Get_Struct(self, git_repository *, repo);
+	rb_iter = rb_block_proc();
+
+	error = git_indexer_new(&indexer, StringValueCStr(rb_packfile_path));
+	rugged_exception_check(error);
+
+	error = git_indexer_iterate(indexer, &stats, repo, &iterator, rb_iter);
+	rugged_exception_check(error);
+
+	git_indexer_free(indexer);
+
+	return Qnil;
+}
+
 void Init_rugged_repo()
 {
 	rb_cRuggedRepo = rb_define_class_under(rb_mRugged, "Repository", rb_cObject);
@@ -715,6 +752,8 @@ void Init_rugged_repo()
 
 	rb_define_method(rb_cRuggedRepo, "head_detached?",  rb_git_repo_head_detached,  0);
 	rb_define_method(rb_cRuggedRepo, "head_orphan?",  rb_git_repo_head_orphan,  0);
+
+	rb_define_method(rb_cRuggedRepo, "iterate_packfile", rb_git_iterate_packfile, 1);
 
 	rb_cRuggedOdbObject = rb_define_class_under(rb_mRugged, "OdbObject", rb_cObject);
 	rb_define_method(rb_cRuggedOdbObject, "data",  rb_git_odbobj_data,  0);
