@@ -12,7 +12,7 @@ if ENV['LIBGIT2_DEBUG']
   $CFLAGS.gsub!(" -Os", " -O0")
 end
 
-ENV['LIBGIT2_PATH'] = File.expand_path('~/projects/libgit2/build')
+ENV['LIBGIT2_PATH'] = File.expand_path('~/projects/libgit2')
 
 if `which make`.strip.empty?
   STDERR.puts "ERROR: GNU make is required to build Rugged"
@@ -21,7 +21,7 @@ end
 
 if p = ENV['LIBGIT2_PATH']
   $INCFLAGS[0,0] = " -I#{File.join(p, 'include')} "
-  $LDFLAGS << " -L#{p} "
+  $LDFLAGS << " -L#{File.join(p, 'build')} "
 
   unless have_library 'git2' and have_header 'git2.h'
     STDERR.puts "ERROR: Invalid `LIBGIT2_PATH` environment"
