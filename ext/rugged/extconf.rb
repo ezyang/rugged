@@ -12,7 +12,7 @@ if ENV['LIBGIT2_DEBUG']
   $CFLAGS.gsub!(" -Os", " -O0")
 end
 
-ENV['LIBGIT2_PATH'] = '/Users/gregorybrockman/projects/libgit2/build'
+ENV['LIBGIT2_PATH'] = File.expand_path('~/projects/libgit2/build')
 
 if `which make`.strip.empty?
   STDERR.puts "ERROR: GNU make is required to build Rugged"
